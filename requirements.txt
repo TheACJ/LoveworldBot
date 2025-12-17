@@ -1,0 +1,23 @@
+# FastAPI and Server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Web Scraping (from original)
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Progress and UI
+rich==13.7.0
+
+# Utilities
+pydantic==2.5.0
+aiofiles==23.2.1
+
+# Optional: For production
+gunicorn==21.2.0
+python-dotenv==1.0.0
