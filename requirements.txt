@@ -4,7 +4,7 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 
 # Telegram Bot
-python-telegram-bot==20.7
+python-telegram-bot>=20.0,<21.0
 
 # Web Scraping (from original)
 requests==2.31.0
@@ -17,6 +17,10 @@ rich==13.7.0
 # Utilities
 pydantic==2.5.0
 aiofiles==23.2.1
+
+# Supabase Integration
+supabase==2.0.2
+python-socketio==5.9.0
 
 # Optional: For production
 gunicorn==21.2.0
