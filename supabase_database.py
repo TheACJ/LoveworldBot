@@ -80,10 +80,19 @@ class SupabaseDatabaseService:
     async def update_job(self, job_id: str, **kwargs) -> bool:
         """Update job with new data."""
         try:
+            # Remove fields that don't exist in schema
+            invalid_fields = ['error', 'lyrics_failed', 'audio_failed']
+            for field in invalid_fields:
+                if field in kwargs:
+                    kwargs.pop(field)
+            
             # Convert datetime objects to ISO strings
             for key, value in kwargs.items():
                 if isinstance(value, datetime):
                     kwargs[key] = value.isoformat()
+            
+            if not kwargs:  # No valid fields to update
+                return True
             
             response = self.client.table(self.config.JOBS_TABLE).update(kwargs).eq(
                 "job_id", job_id
@@ -153,7 +162,7 @@ class SupabaseDatabaseService:
     
     # Song Management
     async def add_scraped_song(self, job_id: str, song_data: Dict) -> Optional[Dict]:
-        """Add a scraped song to database."""
+        """Add a scraped song to database (allows duplicates across different jobs)."""
         try:
             # Get job UUID from job_id
             job = await self.get_job(job_id)
@@ -171,14 +180,24 @@ class SupabaseDatabaseService:
                 "scraped_at": datetime.now().isoformat()
             }
             
-            response = self.client.table(self.config.SONGS_TABLE).insert(song_record).execute()
+            # Try to insert, but ignore duplicate errors (23505)
+            try:
+                response = self.client.table(self.config.SONGS_TABLE).insert(song_record).execute()
+                
+                if response.data:
+                    return response.data[0]
+            except Exception as insert_error:
+                # If it's a duplicate key error, just skip silently (different users can scrape same songs)
+                if '23505' in str(insert_error):
+                    return song_record  # Return the record anyway
+                raise insert_error
             
-            if response.data:
-                return response.data[0]
             return None
             
         except Exception as e:
-            print(f"❌ Error adding scraped song: {e}")
+            # Don't print error for duplicates
+            if '23505' not in str(e):
+                print(f"❌ Error adding scraped song: {e}")
             return None
     
     async def update_song_storage_paths(self, song_id: str, lyrics_path: str = None,
@@ -397,6 +416,45 @@ class SupabaseDatabaseService:
         except Exception as e:
             print(f"❌ Error cleaning up old jobs: {e}")
             return 0
+    
+    # Statistics Methods
+    async def get_all_jobs_count(self) -> int:
+        """Get total number of jobs."""
+        try:
+            response = self.client.table(self.config.JOBS_TABLE).select("id", count="exact").execute()
+            return response.count if hasattr(response, 'count') else 0
+        except Exception as e:
+            print(f"❌ Error getting jobs count: {e}")
+            return 0
+    
+    async def get_completed_jobs_count(self) -> int:
+        """Get number of completed jobs."""
+        try:
+            response = self.client.table(self.config.JOBS_TABLE).select(
+                "id", count="exact"
+            ).eq("status", "completed").execute()
+            return response.count if hasattr(response, 'count') else 0
+        except Exception as e:
+            print(f"❌ Error getting completed jobs count: {e}")
+            return 0
+    
+    async def get_total_users_count(self) -> int:
+        """Get total number of users."""
+        try:
+            response = self.client.table(self.config.USERS_TABLE).select("id", count="exact").execute()
+            return response.count if hasattr(response, 'count') else 0
+        except Exception as e:
+            print(f"❌ Error getting users count: {e}")
+            return 0
+    
+    async def get_all_user_ids(self) -> List[int]:
+        """Get all user Telegram IDs for broadcasting."""
+        try:
+            response = self.client.table(self.config.USERS_TABLE).select("telegram_user_id").execute()
+            return [user["telegram_user_id"] for user in response.data] if response.data else []
+        except Exception as e:
+            print(f"❌ Error getting user IDs: {e}")
+            return []
 
 # Global database service instance
 database_service: Optional[SupabaseDatabaseService] = None

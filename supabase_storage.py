@@ -31,9 +31,10 @@ class SupabaseStorageService:
                     self.bucket_name,
                     options={
                         "public": False,
-                        "file_size_limit": 52428800,  # 50MB
+                        "file_size_limit": 524288000,  # 500MB for large archives
                         "allowed_mime_types": [
-                            "audio/*", "text/*", "application/zip", "application/json"
+                            "audio/*", "text/*", "application/zip", 
+                            "application/x-zip-compressed", "application/json"
                         ]
                     }
                 )
@@ -109,7 +110,8 @@ class SupabaseStorageService:
         try:
             file_info = self._get_file_info(local_file_path)
             
-            if not self._is_file_allowed(file_info):
+            # Skip validation for archives (can be large)
+            if file_type != "archive" and not self._is_file_allowed(file_info):
                 raise ValueError(f"File type or size not allowed: {file_info}")
             
             storage_path = self._get_storage_path(file_info, job_id, file_type)
@@ -141,14 +143,13 @@ class SupabaseStorageService:
     async def upload_file_from_bytes(self, file_data: bytes, filename: str, 
                                    job_id: str, file_type: str = "temp",
                                    mime_type: str = None) -> Optional[Dict]:
-        """Upload file from bytes data."""
+        """Upload file from bytes data (skips validation)."""
         try:
             if mime_type is None:
-                mime_type = mimetypes.guess_type(filename)[0]
+                mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
             
-            storage_path = self._get_storage_path(
-                {"name": filename}, job_id, file_type
-            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            storage_path = f"{job_id}/temp/{timestamp}_{filename}"
             
             response = self.client.storage.from_(self.bucket_name).upload(
                 storage_path,
@@ -278,7 +279,11 @@ class SupabaseStorageService:
             
         except Exception as e:
             print(f"❌ Error during cleanup: {e}")
-            return {"deleted_files": 0, "errors": 1, "error_message": str(e)}
+            # Don't fail completely on network errors
+            error_msg = str(e)
+            if "getaddrinfo failed" in error_msg or "network" in error_msg.lower():
+                print("⚠️  Network error during cleanup - will retry next cycle")
+            return {"deleted_files": 0, "errors": 1, "error_message": error_msg}
     
     async def start_auto_cleanup_scheduler(self):
         """Start automatic cleanup scheduler."""
